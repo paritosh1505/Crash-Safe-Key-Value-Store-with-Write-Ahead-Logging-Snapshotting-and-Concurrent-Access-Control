@@ -1,16 +1,23 @@
 package main
 
 import (
-	"fmt"
+	"bytes"
+	"encoding/binary"
 	"hash/crc32"
+	"io"
+	"log"
 	"os"
-	"strconv"
-	"strings"
 )
 
 type Wal struct {
 	file *os.File
 }
+
+const (
+	SET byte = 0x01
+	DEL byte = 0x02
+)
+
 type WALRecord struct {
 	operation string
 	key       string
@@ -19,6 +26,8 @@ type WALRecord struct {
 	crcval    uint64
 }
 
+var op byte
+
 func NewWal(path string) (*Wal, error) {
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -26,66 +35,119 @@ func NewWal(path string) (*Wal, error) {
 	}
 	return &Wal{file}, nil
 }
+func WriteData(buffData *bytes.Buffer, data any) error {
 
-func EncodeRecord(r WALRecord) []byte {
-	payload := fmt.Sprintf("%s|%s|%s|%d",
-		r.operation,
-		r.key,
-		r.val,
-		r.timestamp,
-	)
-	r.crcval = uint64(crc32.ChecksumIEEE([]byte(payload)))
-	return []byte(fmt.Sprintf("%s|%d", payload, r.crcval))
-
+	err := binary.Write(buffData, binary.BigEndian, data)
+	if err != nil {
+		return err
+	}
+	return nil
 }
-func DecodeRecord(newrec []byte) WALRecord {
-	trimNewLine := strings.TrimSpace(string(newrec))
-	recArray := strings.Split(string(trimNewLine), "|")
+
+func EncodeRecord(r WALRecord) ([]byte, error) {
+	var buff = new(bytes.Buffer)
+	if r.operation == "SET" {
+		op = SET
+	} else {
+		op = DEL
+	}
+
+	err := WriteData(buff, op)
+	if err != nil {
+		return nil, err
+	}
+	err = WriteData(buff, uint64(r.timestamp))
+	if err != nil {
+		return nil, err
+	}
+	err = WriteData(buff, uint32(len(r.key)))
+	if err != nil {
+		return nil, err
+	}
+	if op == 2 {
+		r.val = ""
+	}
+	err = WriteData(buff, uint32(len(r.val)))
+	if err != nil {
+		return nil, err
+	}
+	_, err = buff.Write([]byte(r.key))
+	if err != nil {
+		return nil, err
+	}
+	_, err = buff.Write([]byte(r.val))
+	if err != nil {
+		return nil, err
+	}
+	crcCalculate := crc32.ChecksumIEEE(buff.Bytes())
+	err = WriteData(buff, crcCalculate)
+
+	if err != nil {
+		return nil, err
+	}
+	return buff.Bytes(), nil
+}
+func DecodeRecord() (WALRecord, error) {
+	filereader, err := os.Open("WAL.log")
+	if err != nil {
+		log.Fatal("invalid file read", err)
+	}
 	var record WALRecord
-	record.operation = recArray[0]
-	record.key = recArray[1]
-	record.val = recArray[2]
-	timestamp, err := strconv.ParseUint(recArray[3], 10, 64)
+	var operation byte
+	var timestamp uint64
+	var keylen uint32
+	var vallen uint32
+	var crc32 uint32
+	binary.Read(filereader, binary.BigEndian, &operation)
+	if operation == 1 {
+		record.operation = "SET"
+	} else {
+		record.operation = "DEL"
+	}
+	err = binary.Read(filereader, binary.BigEndian, &timestamp)
 	if err != nil {
-		fmt.Println("err while converting the timestamp")
-		return WALRecord{}
+		log.Fatal("error while reading timestamp==>", err)
 	}
-	record.timestamp = uint64(timestamp)
-	payloadNew := fmt.Sprintf("%s|%s|%s|%d",
-		record.operation,
-		record.key,
-		record.val,
-		record.timestamp)
-	crc, err := strconv.ParseUint(recArray[4], 10, 64)
+	err = binary.Read(filereader, binary.BigEndian, &keylen)
 	if err != nil {
-		fmt.Println("Crc error")
-		return WALRecord{}
+		log.Fatal("Error while reading binary key->", err)
 	}
-	record.crcval = uint64(crc32.ChecksumIEEE([]byte(payloadNew)))
-	if record.crcval != crc {
-		fmt.Println("CRC mismatch error", err)
-		return WALRecord{}
+	err = binary.Read(filereader, binary.BigEndian, &vallen)
+	if err != nil {
+		log.Fatal("Error while reading binary val->", err)
 	}
-	return record
+
+	keylist := make([]byte, keylen)
+	_, err = io.ReadFull(filereader, keylist)
+	record.key = string(keylist)
+	if err != nil {
+		log.Fatal("Error while reading key value->", keylist)
+	}
+	vallist := make([]byte, vallen)
+	_, err = io.ReadFull(filereader, vallist)
+	record.val = string(vallist)
+	if err != nil {
+		log.Fatal("Error while reading key value->", vallist)
+	}
+	binary.Read(filereader, binary.BigEndian, &crc32)
+	return record, nil
 
 }
 
 func WriteToWAL(walPath string, record WALRecord) error {
-	wal, err := NewWal(walPath)
+
+	walBuff, err := NewWal(walPath)
 	if err != nil {
 		return err
 	}
-	defer wal.file.Close()
-	newrec := EncodeRecord(record)
-	newrec = append(newrec, '\n')
-	_, err = wal.file.Write(newrec)
-	err = wal.file.Sync()
+	defer walBuff.file.Close()
+	encodedrec, err := EncodeRecord(record)
 	if err != nil {
-		fmt.Println("Sync fail")
-		return err
+		log.Fatal("Hey there is error->", err)
 	}
-	recval := DecodeRecord(newrec)
-	fmt.Println(recval)
-	//WriteToMap(record)
+	walBuff.file.Write(encodedrec)
+	walBuff.file.Sync()
+	//record, err = DecodeRecord()
+	WriteToMap(record)
 	return err
 }

@@ -9,13 +9,13 @@ func main() {
 		operation: "SET",
 		key:       "key1",
 		val:       "hello",
-		timestamp: uint64(time.Now().Unix()),
+		timestamp: uint64(time.Now().UnixNano()),
 	}
 	rec2 := WALRecord{
-		operation: "SET",
+		operation: "DEL",
 		key:       "key2",
 		val:       "hello",
-		timestamp: uint64(time.Now().Unix()),
+		timestamp: uint64(time.Now().UnixNano()),
 	}
 	WriteToWAL("WAL.log", rec1)
 	WriteToWAL("WAL.log", rec2)
