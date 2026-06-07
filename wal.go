@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"log"
@@ -87,18 +88,29 @@ func EncodeRecord(r WALRecord) ([]byte, error) {
 	}
 	return buff.Bytes(), nil
 }
-func DecodeRecord() (WALRecord, error) {
-	filereader, err := os.Open("WAL.log")
-	if err != nil {
-		log.Fatal("invalid file read", err)
-	}
+func DecodeRecord(filereader *os.File) (WALRecord, error) {
+
 	var record WALRecord
 	var operation byte
 	var timestamp uint64
 	var keylen uint32
 	var vallen uint32
 	var crc32 uint32
-	binary.Read(filereader, binary.BigEndian, &operation)
+	err := binary.Read(filereader, binary.BigEndian, &operation)
+	if err == io.EOF {
+		return WALRecord{}, err
+	}
+	if err != nil {
+		return WALRecord{}, err
+	}
+	switch operation {
+	case 1:
+		record.operation = "SET"
+	case 2:
+		record.operation = "DEL"
+	default:
+		return WALRecord{}, fmt.Errorf("Invalid operation %d", operation)
+	}
 	if operation == 1 {
 		record.operation = "SET"
 	} else {
@@ -106,37 +118,43 @@ func DecodeRecord() (WALRecord, error) {
 	}
 	err = binary.Read(filereader, binary.BigEndian, &timestamp)
 	if err != nil {
-		log.Fatal("error while reading timestamp==>", err)
+		return WALRecord{}, err
 	}
 	err = binary.Read(filereader, binary.BigEndian, &keylen)
 	if err != nil {
-		log.Fatal("Error while reading binary key->", err)
+		return WALRecord{}, err
 	}
 	err = binary.Read(filereader, binary.BigEndian, &vallen)
 	if err != nil {
-		log.Fatal("Error while reading binary val->", err)
+		return WALRecord{}, err
 	}
 
 	keylist := make([]byte, keylen)
 	_, err = io.ReadFull(filereader, keylist)
 	record.key = string(keylist)
 	if err != nil {
-		log.Fatal("Error while reading key value->", keylist)
+		return WALRecord{}, err
 	}
 	vallist := make([]byte, vallen)
 	_, err = io.ReadFull(filereader, vallist)
 	record.val = string(vallist)
 	if err != nil {
-		log.Fatal("Error while reading key value->", vallist)
+		return WALRecord{}, err
 	}
 	binary.Read(filereader, binary.BigEndian, &crc32)
 	return record, nil
 
 }
 
-func WriteToWAL(walPath string, record WALRecord) error {
-
-	walBuff, err := NewWal(walPath)
+func WriteToWAL(currFile string, record WALRecord) error {
+	fileSize, _ := os.Stat(currFile)
+	var filepath string
+	if fileSize.Size() > threshold {
+		filepath = ManageWALFile()
+	} else {
+		filepath = currFile
+	}
+	walBuff, err := NewWal(filepath)
 	if err != nil {
 		return err
 	}

@@ -11,5 +11,5 @@ func WriteToMap(record WALRecord) {
 	case "DEL":
 		delete(mapval, record.key)
 	}
-	fmt.Println("***", record.operation, record.key, record.val)
+	fmt.Println("***Current map", mapval)
 }
