@@ -1,7 +1,5 @@
 package main
 
-import "fmt"
-
 var mapval = make(map[string]string)
 
 func WriteToMap(record WALRecord) {
@@ -11,5 +9,4 @@ func WriteToMap(record WALRecord) {
 	case "DEL":
 		delete(mapval, record.key)
 	}
-	fmt.Println("***Current map", mapval)
 }

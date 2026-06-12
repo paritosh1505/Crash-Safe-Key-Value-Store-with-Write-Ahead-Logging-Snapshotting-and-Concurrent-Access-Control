@@ -9,9 +9,6 @@ import (
 	"strings"
 )
 
-const dirPath = "WAL_LOG"
-const threshold = 109
-
 func ManageWALFile() string {
 
 	dir, err := os.ReadDir(dirPath)
@@ -37,7 +34,7 @@ func ManageWALFile() string {
 			}
 		}
 	}
-
+	latestFileSize += int64(cummulative_buff_size)
 	var newfile string
 	if maxIndex == 0 {
 		newfile = CreateFile(1)
@@ -47,6 +44,8 @@ func ManageWALFile() string {
 		maxIndex = maxIndex + 1
 		newfile = CreateFile(maxIndex)
 	}
+	buff.Reset()
+	cummulative_buff_size = 0
 	return newfile
 }
 func CreateFile(index int) string {
@@ -78,18 +77,19 @@ func ReplayAllWAL(dirName string) string {
 				break
 			}
 			if err != nil {
-				fmt.Printf("Error In WALmanager.go fucntion kindly check")
+				log.Printf("Error decoding WAL record in %s: %v", currFileName, err)
 				break
 			}
 			WriteToMap(record)
 		}
 
 	}
-	fmt.Println("helooooooooooooooooooo", currFileName)
+
 	if len(currFileName) == 0 {
 		return ""
 	} else {
 		stat, err := os.Stat(currFileName)
+		fmt.Println("Curr file name and size", currFileName, stat.Size())
 		if err != nil {
 			log.Fatal("Error while doing stat reading of file")
 		}

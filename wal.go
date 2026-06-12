@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"log"
 	"os"
 )
 
@@ -27,8 +26,6 @@ type WALRecord struct {
 	crcval    uint64
 }
 
-var op byte
-
 func NewWal(path string) (*Wal, error) {
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -45,8 +42,10 @@ func WriteData(buffData *bytes.Buffer, data any) error {
 	return nil
 }
 
-func EncodeRecord(r WALRecord) ([]byte, error) {
-	var buff = new(bytes.Buffer)
+func EncodeRecord(r WALRecord) ([]byte, error, int) {
+	buff.Reset()
+	var op byte
+
 	if r.operation == "SET" {
 		op = SET
 	} else {
@@ -55,38 +54,41 @@ func EncodeRecord(r WALRecord) ([]byte, error) {
 
 	err := WriteData(buff, op)
 	if err != nil {
-		return nil, err
+		return nil, err, 0
 	}
 	err = WriteData(buff, uint64(r.timestamp))
 	if err != nil {
-		return nil, err
+		return nil, err, 0
 	}
 	err = WriteData(buff, uint32(len(r.key)))
 	if err != nil {
-		return nil, err
+		return nil, err, 0
 	}
 	if op == 2 {
 		r.val = ""
 	}
 	err = WriteData(buff, uint32(len(r.val)))
 	if err != nil {
-		return nil, err
+		return nil, err, 0
 	}
 	_, err = buff.Write([]byte(r.key))
 	if err != nil {
-		return nil, err
+		return nil, err, 0
 	}
 	_, err = buff.Write([]byte(r.val))
 	if err != nil {
-		return nil, err
+		return nil, err, 0
 	}
 	crcCalculate := crc32.ChecksumIEEE(buff.Bytes())
 	err = WriteData(buff, crcCalculate)
 
 	if err != nil {
-		return nil, err
+		return nil, err, 0
 	}
-	return buff.Bytes(), nil
+
+	cummulative_buff_size += buff.Len()
+
+	return buff.Bytes(), nil, cummulative_buff_size
 }
 func DecodeRecord(filereader *os.File) (WALRecord, error) {
 
@@ -110,11 +112,6 @@ func DecodeRecord(filereader *os.File) (WALRecord, error) {
 		record.operation = "DEL"
 	default:
 		return WALRecord{}, fmt.Errorf("Invalid operation %d", operation)
-	}
-	if operation == 1 {
-		record.operation = "SET"
-	} else {
-		record.operation = "DEL"
 	}
 	err = binary.Read(filereader, binary.BigEndian, &timestamp)
 	if err != nil {
@@ -147,9 +144,16 @@ func DecodeRecord(filereader *os.File) (WALRecord, error) {
 }
 
 func WriteToWAL(currFile string, record WALRecord) error {
-	fileSize, _ := os.Stat(currFile)
 	var filepath string
-	if fileSize.Size() > threshold {
+	encodedrec, err, buffsize := EncodeRecord(record)
+	fmt.Println("*******buff size", buffsize)
+	info, _ := os.Stat(currFile)
+	currFileSize := info.Size()
+	currFileSize += int64(buffsize)
+
+	cummulative_size_compaction += int(buffsize)
+	if err != nil || buffsize > threshold || currFileSize > threshold {
+		fmt.Println("buff val is *******************************************************************************************************", cummulative_size_compaction)
 		filepath = ManageWALFile()
 	} else {
 		filepath = currFile
@@ -159,13 +163,16 @@ func WriteToWAL(currFile string, record WALRecord) error {
 		return err
 	}
 	defer walBuff.file.Close()
-	encodedrec, err := EncodeRecord(record)
-	if err != nil {
-		log.Fatal("Hey there is error->", err)
-	}
+
 	walBuff.file.Write(encodedrec)
 	walBuff.file.Sync()
 	//record, err = DecodeRecord()
-	WriteToMap(record)
+	if cummulative_size_compaction < compaction_limit {
+		WriteToMap(record)
+	} else {
+		WriteToSnap()
+		cummulative_size_compaction = 0
+	}
+
 	return err
 }

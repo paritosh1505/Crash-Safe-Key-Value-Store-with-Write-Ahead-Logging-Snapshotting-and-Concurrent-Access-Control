@@ -50,3 +50,33 @@ When a write is requested:
 3. The record is encoded into binary, appended to the file, and `fsync` is called to ensure it hits the physical disk.
 4. The in-memory map is updated.
 
+## Compaction and Snapshotting
+
+### Snapshot Binary Format (`snapshot.db`)
+
+| Size | Field | Description |
+| :--- | :--- | :--- |
+| 4 bytes | Magic Number | Identifies the file as a snapsho(0x534E4150) |
+| 4 bytes | Version | Format version |
+| 8 bytes | Entry Count | Number of key-value pairs |
+| 4 bytes | Key Length | Size of the key |
+| 4 bytes | Value Length | Size of the value |
+| N bytes | Key | Raw key bytes |
+| M bytes | Value | Raw value bytes |
+| 4 bytes | CRC32 | Checksum of the entire snapshot |
+
+### Manifest Format (`manifest.json`)
+
+The manifest tracks the synchronization between the snapshot and the WAL segments.
+
+```json
+{
+  "manifest_version": 1,
+  "last_compacted_index": 5,
+  "snapshot_file": "snapshot.db",
+  "snapshot_checksum": 123456789,
+  "created_at": 171543200
+}
+```
+
+A crash during compaction is recovered by checking the manifest. If the manifest is missing or the snapshot checksum fails, the system defaults to a full WAL replay from segment 000001.
