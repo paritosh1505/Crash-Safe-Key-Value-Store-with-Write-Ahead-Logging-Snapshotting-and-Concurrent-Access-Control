@@ -3,7 +3,7 @@
 ---WAL will be in binary format and this is format i am following 
 # Persistent KV Storage (WAL-based)
 
-This project implements a high-performance, persistent Key-Value store inspired by the Bitcask design. It uses a segmented Write-Ahead Log (WAL) to ensure data durability and fast recovery.
+This project implements a high-performance, persistent Key-Value store inspired by the Bitcask design. It uses a segmented Write-Ahead Log (WAL) to ensure data durability and fast recovery.Here we are folloiwng LSM(log-structured merge tree) style storage engine with snapshots + WAL compaction
 
 ## Core Features
 

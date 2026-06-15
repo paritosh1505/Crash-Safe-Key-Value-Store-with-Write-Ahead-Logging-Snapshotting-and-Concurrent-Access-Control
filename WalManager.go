@@ -65,6 +65,7 @@ func ReplayAllWAL(dirName string) string {
 	if err != nil {
 		log.Fatal("Directory Not found")
 	}
+	//index:=FetchManifestIndex()
 	for _, filename := range dirpath {
 		currFileName = dirName + "/" + filename.Name()
 		filereader, err := os.Open(currFileName)

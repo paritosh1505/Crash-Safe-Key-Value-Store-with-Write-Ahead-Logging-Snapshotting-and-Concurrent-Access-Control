@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"log"
 	"os"
 )
 
@@ -143,17 +144,35 @@ func DecodeRecord(filereader *os.File) (WALRecord, error) {
 
 }
 
+func StoreSealedFile(buffsize int, threshold int, sealedEntry []string) []string {
+	dirpath, err := os.ReadDir(dirPath)
+	if err != nil {
+		log.Fatal("Error while reading directory in storeSealedFile")
+	}
+
+	for _, filename := range dirpath {
+		if _, exist := sealedFileSet[filename.Name()]; !exist {
+			sealedEntry = append(sealedEntry, filename.Name())
+			sealedFileSet[filename.Name()] = struct{}{}
+		}
+
+	}
+	return sealedEntry
+}
 func WriteToWAL(currFile string, record WALRecord) error {
 	var filepath string
 	encodedrec, err, buffsize := EncodeRecord(record)
-	fmt.Println("*******buff size", buffsize)
-	info, _ := os.Stat(currFile)
+
+	info, err := os.Stat(currFile)
+	if err != nil {
+		log.Fatal("Getting error in stat function-->", err)
+	}
 	currFileSize := info.Size()
 	currFileSize += int64(buffsize)
-
+	//fmt.Println("**************", sealedFile)
 	cummulative_size_compaction += int(buffsize)
 	if err != nil || buffsize > threshold || currFileSize > threshold {
-		fmt.Println("buff val is *******************************************************************************************************", cummulative_size_compaction)
+		sealedFile = StoreSealedFile(buffsize, threshold, sealedFile)
 		filepath = ManageWALFile()
 	} else {
 		filepath = currFile
@@ -170,6 +189,7 @@ func WriteToWAL(currFile string, record WALRecord) error {
 	if cummulative_size_compaction < compaction_limit {
 		WriteToMap(record)
 	} else {
+		//sealedFile = append(sealedFile, currFile)
 		WriteToSnap()
 		cummulative_size_compaction = 0
 	}
