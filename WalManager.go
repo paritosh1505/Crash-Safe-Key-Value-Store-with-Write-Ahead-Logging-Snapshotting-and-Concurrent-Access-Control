@@ -49,17 +49,34 @@ func ManageWALFile() string {
 	return newfile
 }
 func CreateFile(index int) string {
+	var file *os.File
 	path := fmt.Sprintf("WAL_LOG/wal-%06d.log", index)
-	fmt.Println(path)
-	file, err := os.Create(path)
+	_, err := os.Stat(path)
 	if err != nil {
-		log.Fatal("Error while creating teh file")
+		if os.IsNotExist(err) {
+			file, err = os.Create(path)
+			if err != nil {
+				log.Fatal("Error while creating teh file")
+			}
+		} else {
+			log.Fatal("Unexpected error while creating the file")
+		}
 	}
+	fmt.Println(path)
+
 	defer file.Close()
 	return path
 }
 
 func ReplayAllWAL(dirName string) string {
+	_, err := os.Stat(snap_path)
+	if err == nil {
+		err = LoadSnapDataToMemory()
+		if err != nil {
+			fmt.Println("Error in snapshot file-->", err)
+		}
+	}
+
 	var currFileName string
 	dirpath, err := os.ReadDir(dirName)
 	if err != nil {

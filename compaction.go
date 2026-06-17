@@ -149,8 +149,8 @@ func WriteToSnap() {
 	hasher := crc32.NewIEEE() //used for incremental hashing
 	for _, p := range sealedFile {
 		filepath := dirPath + "/" + p
-		name = strings.Split(p, ".")[0]
-		snapIndex := strings.Split(strings.Split(p, ",")[0], "-")[1]
+		//name = strings.Split(p, ".")[0]
+		snapIndex := strings.Split(strings.Split(p, ".")[0], "-")[1]
 		latest_snapShot, _ = strconv.Atoi(snapIndex)
 		os.Remove(filepath)
 	}
@@ -187,4 +187,51 @@ func WriteToSnap() {
 		Entry_count:        len(mapval),
 	}
 	manifest.AddingEntryToManifest()
+}
+
+func ScanFileUsingManifest() string {
+	data, err := os.ReadFile(manifest)
+	if err != nil {
+		log.Fatal("Manifest file not found")
+	}
+	var manifestData ManifestData
+	err = json.Unmarshal(data, &manifestData)
+	if err != nil {
+		log.Fatal("Error while fetching the data from manifest json")
+	}
+	return CreateFile(manifestData.Last_compact_index)
+}
+
+func LoadSnapDataToMemory() error {
+	file, err := os.Open(snap_path)
+	magicbuff := make([]byte, 4)
+	var snapEntry SnapShotEntry
+	var header SnapShotHeader
+	if err != nil {
+		log.Fatal("Snap File has some issue==>", file)
+	}
+	err = binary.Read(file, binary.BigEndian, &header.MagicNumber)
+	binary.BigEndian.PutUint32(magicbuff, header.MagicNumber)
+	err = binary.Read(file, binary.BigEndian, &header.Version)
+	err = binary.Read(file, binary.BigEndian, &header.EntryCount)
+
+	if string(magicbuff) != "SNAP" {
+		return fmt.Errorf("Invalid snapshot file since correct header is not present")
+	}
+	for i := 0; i < int(header.EntryCount); i++ {
+		if err == io.EOF {
+			break
+		}
+		binary.Read(file, binary.BigEndian, &snapEntry.Keylen)
+		binary.Read(file, binary.BigEndian, &snapEntry.Vallen)
+		keyByte := make([]byte, snapEntry.Keylen)
+		valByte := make([]byte, snapEntry.Vallen)
+		io.ReadFull(file, keyByte)
+		io.ReadFull(file, valByte)
+
+		fmt.Println(string(keyByte))
+		fmt.Println(string(valByte))
+		mapval[string(keyByte)] = string(valByte)
+	}
+	return nil
 }

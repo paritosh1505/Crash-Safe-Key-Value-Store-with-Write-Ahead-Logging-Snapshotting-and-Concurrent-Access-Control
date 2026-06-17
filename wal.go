@@ -162,13 +162,24 @@ func StoreSealedFile(buffsize int, threshold int, sealedEntry []string) []string
 func WriteToWAL(currFile string, record WALRecord) error {
 	var filepath string
 	encodedrec, err, buffsize := EncodeRecord(record)
-
 	info, err := os.Stat(currFile)
 	if err != nil {
-		log.Fatal("Getting error in stat function-->", err)
+		if os.IsNotExist(err) {
+			fmt.Println("Scanning manifest json file now")
+			currFile = ScanFileUsingManifest()
+			info, _ = os.Stat(currFile)
+			fmt.Println("curr file", currFile, "and size ", info.Size())
+
+		} else {
+			log.Fatal("Error in file operation-->", err)
+		}
+
 	}
+
 	currFileSize := info.Size()
 	currFileSize += int64(buffsize)
+	fmt.Println("curr file", currFile, "and size ", currFileSize)
+
 	//fmt.Println("**************", sealedFile)
 	cummulative_size_compaction += int(buffsize)
 	if err != nil || buffsize > threshold || currFileSize > threshold {
