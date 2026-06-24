@@ -10,10 +10,6 @@ import (
 	"os"
 )
 
-type Wal struct {
-	file *os.File
-}
-
 const (
 	SET byte = 0x01
 	DEL byte = 0x02
@@ -27,14 +23,14 @@ type WALRecord struct {
 	crcval    uint64
 }
 
-func NewWal(path string) (*Wal, error) {
+func OpenWAL(path string) (CentralStorage, error) {
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
-		return nil, err
+		return CentralStorage{}, err
 	}
-	return &Wal{file}, nil
+	return CentralStorage{file: file}, nil
 }
-func WriteData(buffData *bytes.Buffer, data any) error {
+func WriteBinary(buffData *bytes.Buffer, data any) error {
 
 	err := binary.Write(buffData, binary.BigEndian, data)
 	if err != nil {
@@ -43,8 +39,10 @@ func WriteData(buffData *bytes.Buffer, data any) error {
 	return nil
 }
 
-func EncodeRecord(r WALRecord) ([]byte, error, int) {
-	buff.Reset()
+func EncodeWALRecord(r WALRecord) ([]byte, error, int64) {
+	centralStorage.mu.Lock()
+	defer centralStorage.mu.Unlock()
+	centralStorage.buff.Reset()
 	var op byte
 
 	if r.operation == "SET" {
@@ -53,45 +51,44 @@ func EncodeRecord(r WALRecord) ([]byte, error, int) {
 		op = DEL
 	}
 
-	err := WriteData(buff, op)
+	err := WriteBinary(centralStorage.buff, op)
 	if err != nil {
 		return nil, err, 0
 	}
-	err = WriteData(buff, uint64(r.timestamp))
+	err = WriteBinary(centralStorage.buff, uint64(r.timestamp))
 	if err != nil {
 		return nil, err, 0
 	}
-	err = WriteData(buff, uint32(len(r.key)))
+	err = WriteBinary(centralStorage.buff, uint32(len(r.key)))
 	if err != nil {
 		return nil, err, 0
 	}
 	if op == 2 {
 		r.val = ""
 	}
-	err = WriteData(buff, uint32(len(r.val)))
+	err = WriteBinary(centralStorage.buff, uint32(len(r.val)))
 	if err != nil {
 		return nil, err, 0
 	}
-	_, err = buff.Write([]byte(r.key))
+	_, err = centralStorage.buff.Write([]byte(r.key))
 	if err != nil {
 		return nil, err, 0
 	}
-	_, err = buff.Write([]byte(r.val))
+	_, err = centralStorage.buff.Write([]byte(r.val))
 	if err != nil {
 		return nil, err, 0
 	}
-	crcCalculate := crc32.ChecksumIEEE(buff.Bytes())
-	err = WriteData(buff, crcCalculate)
+	crcCalculate := crc32.ChecksumIEEE(centralStorage.buff.Bytes())
+	err = WriteBinary(centralStorage.buff, crcCalculate)
 
 	if err != nil {
 		return nil, err, 0
 	}
+	centralStorage.cummulative_buff_size += int64(centralStorage.buff.Len())
 
-	cummulative_buff_size += buff.Len()
-
-	return buff.Bytes(), nil, cummulative_buff_size
+	return centralStorage.buff.Bytes(), nil, centralStorage.cummulative_buff_size
 }
-func DecodeRecord(filereader *os.File) (WALRecord, error) {
+func DecodeWALRecord(filereader *os.File) (WALRecord, error) {
 
 	var record WALRecord
 	var operation byte
@@ -144,24 +141,26 @@ func DecodeRecord(filereader *os.File) (WALRecord, error) {
 
 }
 
-func StoreSealedFile(buffsize int, threshold int, sealedEntry []string) []string {
+func StoreSealedFile(buffsize int64, threshold int, sealedEntry []string) []string {
+
 	dirpath, err := os.ReadDir(dirPath)
 	if err != nil {
 		log.Fatal("Error while reading directory in storeSealedFile")
 	}
 
 	for _, filename := range dirpath {
-		if _, exist := sealedFileSet[filename.Name()]; !exist {
+		if _, exist := centralStorage.sealedFileSet[filename.Name()]; !exist {
 			sealedEntry = append(sealedEntry, filename.Name())
-			sealedFileSet[filename.Name()] = struct{}{}
+			centralStorage.sealedFileSet[filename.Name()] = struct{}{}
 		}
 
 	}
 	return sealedEntry
 }
-func WriteToWAL(currFile string, record WALRecord) error {
-	var filepath string
-	encodedrec, err, buffsize := EncodeRecord(record)
+func (c *CentralStorage) WriteToWAL(currFile string, record WALRecord) error {
+	c.mu.Lock()
+	encodedrec, err, buffsize := EncodeWALRecord(record)
+	defer c.mu.Unlock()
 	info, err := os.Stat(currFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -181,28 +180,21 @@ func WriteToWAL(currFile string, record WALRecord) error {
 	fmt.Println("curr file", currFile, "and size ", currFileSize)
 
 	//fmt.Println("**************", sealedFile)
-	cummulative_size_compaction += int(buffsize)
+	c.cummulative_size_compaction += int(buffsize)
 	if err != nil || buffsize > threshold || currFileSize > threshold {
-		sealedFile = StoreSealedFile(buffsize, threshold, sealedFile)
-		filepath = ManageWALFile()
-	} else {
-		filepath = currFile
+		c.sealedFile = StoreSealedFile(buffsize, threshold, c.sealedFile)
+		ManageWALFile()
 	}
-	walBuff, err := NewWal(filepath)
-	if err != nil {
-		return err
-	}
-	defer walBuff.file.Close()
 
-	walBuff.file.Write(encodedrec)
-	walBuff.file.Sync()
-	//record, err = DecodeRecord()
-	if cummulative_size_compaction < compaction_limit {
+	c.file.Write(encodedrec)
+	c.file.Sync()
+	//record, err = DecodeWALRecord()
+	if c.cummulative_size_compaction < compaction_limit {
 		WriteToMap(record)
 	} else {
 		//sealedFile = append(sealedFile, currFile)
 		WriteToSnap()
-		cummulative_size_compaction = 0
+		c.cummulative_size_compaction = 0
 	}
 
 	return err

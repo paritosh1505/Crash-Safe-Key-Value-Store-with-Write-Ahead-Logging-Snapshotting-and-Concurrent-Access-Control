@@ -138,7 +138,7 @@ func FetchManifestIndex() int {
 	if err != nil {
 		panic(err)
 	}
-	index := manifestStruct.Last_compact_index + 1
+	index := manifestStruct.Last_compact_index
 	//filename := fmt.Sprintf("WAL_LOG/wal-%06d.log", index)
 	return index
 }
@@ -199,7 +199,7 @@ func ScanFileUsingManifest() string {
 	if err != nil {
 		log.Fatal("Error while fetching the data from manifest json")
 	}
-	return CreateFile(manifestData.Last_compact_index)
+	return CreateWALSegment(manifestData.Last_compact_index)
 }
 
 func LoadSnapDataToMemory() error {

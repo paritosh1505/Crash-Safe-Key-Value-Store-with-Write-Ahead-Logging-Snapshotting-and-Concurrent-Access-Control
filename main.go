@@ -4,13 +4,12 @@ import (
 	"time"
 )
 
-func main() {
-	//fileName := ManageWALFile()
-
+func main1() {
 	fileCurr := ReplayAllWAL("WAL_LOG")
 	if fileCurr == "" {
-		fileCurr = CreateFile(1)
+		fileCurr = CreateWALSegment(1)
 	}
+	c1, _ := OpenWAL(fileCurr)
 	rec1 := WALRecord{
 		operation: "SET",
 		key:       "key1",
@@ -58,14 +57,28 @@ func main() {
 		val:       "This is latest 3rd key",
 		timestamp: uint64(time.Now().UnixNano()),
 	}
+	rec9 := WALRecord{
+		operation: "SET",
+		key:       "key6",
+		val:       "Now i am adding 6th key",
+		timestamp: uint64(time.Now().UnixNano()),
+	}
+	rec10 := WALRecord{
+		operation: "SET",
+		key:       "key8",
+		val:       "hello eigth key",
+		timestamp: uint64(time.Now().UnixNano()),
+	}
 
-	WriteToWAL(fileCurr, rec1)
-	WriteToWAL(fileCurr, rec2)
-	WriteToWAL(fileCurr, rec3)
-	WriteToWAL(fileCurr, rec4)
-	WriteToWAL(fileCurr, rec5)
-	WriteToWAL(fileCurr, rec6)
-	WriteToWAL(fileCurr, rec7)
-	WriteToWAL(fileCurr, rec8)
+	c1.WriteToWAL(fileCurr, rec1)
+	c1.WriteToWAL(fileCurr, rec2)
+	c1.WriteToWAL(fileCurr, rec3)
+	c1.WriteToWAL(fileCurr, rec4)
+	c1.WriteToWAL(fileCurr, rec5)
+	c1.WriteToWAL(fileCurr, rec6)
+	c1.WriteToWAL(fileCurr, rec7)
+	c1.WriteToWAL(fileCurr, rec8)
+	c1.WriteToWAL(fileCurr, rec9)
+	c1.WriteToWAL(fileCurr, rec10)
 
 }
