@@ -9,9 +9,8 @@ import (
 	"strings"
 )
 
-func ManageWALFile() string {
-	centralStorage.mu.Lock()
-	defer centralStorage.mu.Unlock()
+func (c *CentralStorage) ManageWALFile() string {
+
 	dir, err := os.ReadDir(dirPath)
 	if err != nil {
 		log.Fatalf("Directory %s not found: %v", dirPath, err)
@@ -35,27 +34,27 @@ func ManageWALFile() string {
 			}
 		}
 	}
-	latestFileSize += int64(centralStorage.cummulative_buff_size)
+	latestFileSize += int64(c.cummulative_buff_size)
 	var newfile string
 	if maxIndex == 0 {
-		newfile = CreateWALSegment(1)
+		newfile = c.CreateWALSegment(1)
 	} else if latestFileSize < int64(threshold) {
 		newfile = dirPath + "/" + latestFileName
 	} else {
 		maxIndex = maxIndex + 1
-		newfile = CreateWALSegment(maxIndex)
+		newfile = c.CreateWALSegment(maxIndex)
+
 	}
-	centralStorage.buff.Reset()
-	centralStorage.cummulative_buff_size = 0
+	c.buff.Reset()
+	c.cummulative_buff_size = 0
 	return newfile
 }
-func CreateWALSegment(index int) string {
-	var file *os.File
+func (c *CentralStorage) CreateWALSegment(index int) string {
 	path := fmt.Sprintf("WAL_LOG/wal-%06d.log", index)
 	_, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			file, err = os.Create(path)
+			c.file, err = os.Create(path)
 			if err != nil {
 				log.Fatal("Error while creating teh file")
 			}
@@ -64,21 +63,19 @@ func CreateWALSegment(index int) string {
 		}
 	}
 	fmt.Println(path)
-
-	defer file.Close()
 	return path
 }
 
-func ReplayAllWAL(dirName string) string {
+func (c *CentralStorage) ReplayAllWAL(dirName string) string {
 	_, err := os.Stat(centralStorage.snap_path)
 	if err == nil {
-		err = LoadSnapDataToMemory()
+		err = c.LoadSnapDataToMemory()
 		if err != nil {
 			fmt.Println("Error in snapshot file-->", err)
 		}
 	}
-	index := FetchManifestIndex()
-	fmt.Println("********index val", FetchManifestIndex())
+	index := c.FetchManifestIndex()
+	fmt.Println("********index val", c.FetchManifestIndex())
 	var currFileName string
 	dirpath, err := os.ReadDir(dirName)
 	if err != nil {
@@ -93,7 +90,7 @@ func ReplayAllWAL(dirName string) string {
 				log.Fatal("Error while reading the file")
 			}
 			for {
-				record, err := DecodeWALRecord(filereader)
+				record, err := c.DecodeWALRecord(filereader)
 				if err == io.EOF {
 					break
 				}

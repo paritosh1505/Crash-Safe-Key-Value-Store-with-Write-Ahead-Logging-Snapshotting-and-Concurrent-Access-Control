@@ -23,12 +23,14 @@ type WALRecord struct {
 	crcval    uint64
 }
 
-func OpenWAL(path string) (CentralStorage, error) {
+func (c *CentralStorage) OpenWAL(path string) error {
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
-		return CentralStorage{}, err
+		return err
 	}
-	return CentralStorage{file: file}, nil
+	c.file = file
+	c.currentOperationFile = file.Name()
+	return nil
 }
 func WriteBinary(buffData *bytes.Buffer, data any) error {
 
@@ -39,10 +41,9 @@ func WriteBinary(buffData *bytes.Buffer, data any) error {
 	return nil
 }
 
-func EncodeWALRecord(r WALRecord) ([]byte, error, int64) {
-	centralStorage.mu.Lock()
-	defer centralStorage.mu.Unlock()
-	centralStorage.buff.Reset()
+func (c *CentralStorage) EncodeWALRecord(r WALRecord) ([]byte, error, int64) {
+
+	c.buff.Reset()
 	var op byte
 
 	if r.operation == "SET" {
@@ -51,44 +52,44 @@ func EncodeWALRecord(r WALRecord) ([]byte, error, int64) {
 		op = DEL
 	}
 
-	err := WriteBinary(centralStorage.buff, op)
+	err := WriteBinary(c.buff, op)
 	if err != nil {
 		return nil, err, 0
 	}
-	err = WriteBinary(centralStorage.buff, uint64(r.timestamp))
+	err = WriteBinary(c.buff, uint64(r.timestamp))
 	if err != nil {
 		return nil, err, 0
 	}
-	err = WriteBinary(centralStorage.buff, uint32(len(r.key)))
+	err = WriteBinary(c.buff, uint32(len(r.key)))
 	if err != nil {
 		return nil, err, 0
 	}
 	if op == 2 {
 		r.val = ""
 	}
-	err = WriteBinary(centralStorage.buff, uint32(len(r.val)))
+	err = WriteBinary(c.buff, uint32(len(r.val)))
 	if err != nil {
 		return nil, err, 0
 	}
-	_, err = centralStorage.buff.Write([]byte(r.key))
+	_, err = c.buff.Write([]byte(r.key))
 	if err != nil {
 		return nil, err, 0
 	}
-	_, err = centralStorage.buff.Write([]byte(r.val))
+	_, err = c.buff.Write([]byte(r.val))
 	if err != nil {
 		return nil, err, 0
 	}
-	crcCalculate := crc32.ChecksumIEEE(centralStorage.buff.Bytes())
-	err = WriteBinary(centralStorage.buff, crcCalculate)
+	crcCalculate := crc32.ChecksumIEEE(c.buff.Bytes())
+	err = WriteBinary(c.buff, crcCalculate)
 
 	if err != nil {
 		return nil, err, 0
 	}
-	centralStorage.cummulative_buff_size += int64(centralStorage.buff.Len())
+	c.cummulative_buff_size += int64(c.buff.Len())
 
-	return centralStorage.buff.Bytes(), nil, centralStorage.cummulative_buff_size
+	return c.buff.Bytes(), nil, c.cummulative_buff_size
 }
-func DecodeWALRecord(filereader *os.File) (WALRecord, error) {
+func (c *CentralStorage) DecodeWALRecord(filereader *os.File) (WALRecord, error) {
 
 	var record WALRecord
 	var operation byte
@@ -141,7 +142,7 @@ func DecodeWALRecord(filereader *os.File) (WALRecord, error) {
 
 }
 
-func StoreSealedFile(buffsize int64, threshold int, sealedEntry []string) []string {
+func (c *CentralStorage) StoreSealedFile(buffsize int64, threshold int, sealedEntry []string) []string {
 
 	dirpath, err := os.ReadDir(dirPath)
 	if err != nil {
@@ -155,17 +156,18 @@ func StoreSealedFile(buffsize int64, threshold int, sealedEntry []string) []stri
 		}
 
 	}
+	defer c.file.Close()
 	return sealedEntry
 }
 func (c *CentralStorage) WriteToWAL(currFile string, record WALRecord) error {
 	c.mu.Lock()
-	encodedrec, err, buffsize := EncodeWALRecord(record)
+	encodedrec, err, buffsize := c.EncodeWALRecord(record)
 	defer c.mu.Unlock()
 	info, err := os.Stat(currFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			fmt.Println("Scanning manifest json file now")
-			currFile = ScanFileUsingManifest()
+			currFile = c.ScanFileUsingManifest()
 			info, _ = os.Stat(currFile)
 			fmt.Println("curr file", currFile, "and size ", info.Size())
 
@@ -182,8 +184,8 @@ func (c *CentralStorage) WriteToWAL(currFile string, record WALRecord) error {
 	//fmt.Println("**************", sealedFile)
 	c.cummulative_size_compaction += int(buffsize)
 	if err != nil || buffsize > threshold || currFileSize > threshold {
-		c.sealedFile = StoreSealedFile(buffsize, threshold, c.sealedFile)
-		ManageWALFile()
+		c.sealedFile = c.StoreSealedFile(buffsize, threshold, c.sealedFile)
+		c.currentOperationFile = c.ManageWALFile()
 	}
 
 	c.file.Write(encodedrec)
@@ -193,7 +195,7 @@ func (c *CentralStorage) WriteToWAL(currFile string, record WALRecord) error {
 		WriteToMap(record)
 	} else {
 		//sealedFile = append(sealedFile, currFile)
-		WriteToSnap()
+		c.WriteToSnap()
 		c.cummulative_size_compaction = 0
 	}
 

@@ -4,12 +4,13 @@ import (
 	"time"
 )
 
-func main1() {
-	fileCurr := ReplayAllWAL("WAL_LOG")
+func main() {
+	//var ct CentralStorage
+	fileCurr := centralStorage.ReplayAllWAL("WAL_LOG")
 	if fileCurr == "" {
-		fileCurr = CreateWALSegment(1)
+		centralStorage.currentOperationFile = centralStorage.CreateWALSegment(1)
 	}
-	c1, _ := OpenWAL(fileCurr)
+	_ = centralStorage.OpenWAL(centralStorage.currentOperationFile)
 	rec1 := WALRecord{
 		operation: "SET",
 		key:       "key1",
@@ -70,15 +71,16 @@ func main1() {
 		timestamp: uint64(time.Now().UnixNano()),
 	}
 
-	c1.WriteToWAL(fileCurr, rec1)
-	c1.WriteToWAL(fileCurr, rec2)
-	c1.WriteToWAL(fileCurr, rec3)
-	c1.WriteToWAL(fileCurr, rec4)
-	c1.WriteToWAL(fileCurr, rec5)
-	c1.WriteToWAL(fileCurr, rec6)
-	c1.WriteToWAL(fileCurr, rec7)
-	c1.WriteToWAL(fileCurr, rec8)
-	c1.WriteToWAL(fileCurr, rec9)
-	c1.WriteToWAL(fileCurr, rec10)
+	centralStorage.WriteToWAL(centralStorage.currentOperationFile, rec1)
+
+	centralStorage.WriteToWAL(centralStorage.currentOperationFile, rec2)
+	centralStorage.WriteToWAL(centralStorage.currentOperationFile, rec3)
+	centralStorage.WriteToWAL(centralStorage.currentOperationFile, rec4)
+	centralStorage.WriteToWAL(centralStorage.currentOperationFile, rec5)
+	centralStorage.WriteToWAL(centralStorage.currentOperationFile, rec6)
+	centralStorage.WriteToWAL(centralStorage.currentOperationFile, rec7)
+	centralStorage.WriteToWAL(centralStorage.currentOperationFile, rec8)
+	centralStorage.WriteToWAL(centralStorage.currentOperationFile, rec9)
+	centralStorage.WriteToWAL(centralStorage.currentOperationFile, rec10)
 
 }

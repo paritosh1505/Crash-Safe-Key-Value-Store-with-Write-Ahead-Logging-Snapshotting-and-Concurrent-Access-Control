@@ -31,32 +31,25 @@ type SnapShotEntry struct {
 	Key    string
 	Val    string
 }
-type ManifestData struct {
-	Manifest_version   int    `json:"version"`
-	Last_compact_index int    `json:"last_index"`
-	Snapshot_file      string `json:"file"`
-	Snapshot_checksum  uint32 `json:"checksum"`
-	Created_at         int64  `json:"CreatedAt"`
-	Entry_count        int    `json:"entryCount"`
-}
 
 type SnapShotFooter struct {
 	Crcval uint32
 }
 
-func (m *ManifestData) AddingEntryToManifest() error {
-	data, err := json.MarshalIndent(m, "", " ")
+func (c *CentralStorage) AddingEntryToManifest() error {
+	data, err := json.MarshalIndent(c.manifestJson, "", " ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(manifest, data, 0644)
+	return os.WriteFile(c.manifest, data, 0644)
 }
-func CreateManifest() (*ManifestFile, error) {
-	file, err := os.OpenFile(manifest, os.O_CREATE|os.O_RDWR, 0644)
+func (c *CentralStorage) CreateManifest() (*ManifestFile, error) {
+	file, err := os.OpenFile(c.manifest, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return nil, err
 	}
-	manifest := ManifestData{
+
+	c.manifestJson = ManifestJson{
 		Manifest_version:   1,
 		Last_compact_index: 0,
 		Snapshot_file:      "",
@@ -64,11 +57,11 @@ func CreateManifest() (*ManifestFile, error) {
 		Created_at:         0,
 		Entry_count:        0,
 	}
-	manifest.AddingEntryToManifest()
+	c.AddingEntryToManifest()
 	return &ManifestFile{file}, nil
 }
-func CreateSnapShot() (*SnapShotFile, error) {
-	file, err := os.OpenFile(snap_path, os.O_CREATE|os.O_RDWR, 0644)
+func (c *CentralStorage) CreateSnapShot() (*SnapShotFile, error) {
+	file, err := os.OpenFile(c.snap_path, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		log.Fatal("Error while creating snapshot file ", err)
 	}
@@ -93,9 +86,9 @@ func (e *SnapShotEntry) WriteSnapShotEntry(mw io.Writer) error {
 	}
 	return nil
 }
-func DeleteSnapBinary() {
+func (c *CentralStorage) DeleteSnapBinary() {
 	fmt.Println("Deleting the Binary since we have encountered the error")
-	err := os.Remove(snap_path)
+	err := os.Remove(c.snap_path)
 	if err != nil {
 		log.Fatal("Error while deleting the file ", err)
 	}
@@ -121,35 +114,34 @@ func (h *SnapShotFooter) WriteSnapShotFooter(file *os.File, hasher hash.Hash32) 
 	}
 	return crcCal, nil
 }
-func CheckManifest() {
-	_, errStat := os.Stat(manifest)
+func (c *CentralStorage) CheckManifest() {
+	_, errStat := os.Stat(c.manifest)
 	if err := os.IsNotExist(errStat); err {
-		if _, err := CreateManifest(); err != nil {
+		if _, err := c.CreateManifest(); err != nil {
 			fmt.Println("File error", err)
 		}
 	}
 }
 
-func FetchManifestIndex() int {
-	CheckManifest()
-	var manifestStruct ManifestData
-	data, _ := os.ReadFile(manifest)
+func (c *CentralStorage) FetchManifestIndex() int {
+	c.CheckManifest()
+	var manifestStruct ManifestJson
+	data, _ := os.ReadFile(c.manifest)
 	err := json.Unmarshal(data, &manifestStruct)
 	if err != nil {
 		panic(err)
 	}
 	index := manifestStruct.Last_compact_index
-	//filename := fmt.Sprintf("WAL_LOG/wal-%06d.log", index)
 	return index
 }
 
-func WriteToSnap() {
+func (c *CentralStorage) WriteToSnap() {
 	var latest_snapShot int
 	var name string
 	hasher := crc32.NewIEEE() //used for incremental hashing
-	for _, p := range sealedFile {
+	for _, p := range centralStorage.sealedFile {
 		filepath := dirPath + "/" + p
-		//name = strings.Split(p, ".")[0]
+		name = strings.Split(p, ".")[0]
 		snapIndex := strings.Split(strings.Split(p, ".")[0], "-")[1]
 		latest_snapShot, _ = strconv.Atoi(snapIndex)
 		os.Remove(filepath)
@@ -160,14 +152,14 @@ func WriteToSnap() {
 		EntryCount:  uint32(len(mapval)),
 	}
 	entry := SnapShotEntry{}
-	file, err := CreateSnapShot()
+	file, err := c.CreateSnapShot()
 	if err != nil {
 		log.Fatal("Error while creating in file ", err)
 	}
 
 	mw := io.MultiWriter(file.file, hasher)
 	if err := headerval.WriteSnapShotHeader(mw); err != nil {
-		DeleteSnapBinary()
+		c.DeleteSnapBinary()
 	}
 	if err := entry.WriteSnapShotEntry(mw); err != nil {
 		log.Fatal("Error while writng the entry to snap=>", err)
@@ -178,7 +170,7 @@ func WriteToSnap() {
 		log.Fatal("Error in footer-->", err)
 	}
 
-	manifest := ManifestData{
+	c.manifestJson = ManifestJson{
 		Manifest_version:   1,
 		Last_compact_index: latest_snapShot,
 		Snapshot_file:      name,
@@ -186,24 +178,24 @@ func WriteToSnap() {
 		Created_at:         time.Now().Unix(),
 		Entry_count:        len(mapval),
 	}
-	manifest.AddingEntryToManifest()
+	c.AddingEntryToManifest()
 }
 
-func ScanFileUsingManifest() string {
-	data, err := os.ReadFile(manifest)
+func (c *CentralStorage) ScanFileUsingManifest() string {
+	data, err := os.ReadFile(c.manifest)
 	if err != nil {
 		log.Fatal("Manifest file not found")
 	}
-	var manifestData ManifestData
+	var manifestData ManifestJson
 	err = json.Unmarshal(data, &manifestData)
 	if err != nil {
 		log.Fatal("Error while fetching the data from manifest json")
 	}
-	return CreateWALSegment(manifestData.Last_compact_index)
+	return c.CreateWALSegment(manifestData.Last_compact_index)
 }
 
-func LoadSnapDataToMemory() error {
-	file, err := os.Open(snap_path)
+func (c *CentralStorage) LoadSnapDataToMemory() error {
+	file, err := os.Open(c.snap_path)
 	magicbuff := make([]byte, 4)
 	var snapEntry SnapShotEntry
 	var header SnapShotHeader

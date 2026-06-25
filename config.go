@@ -34,7 +34,17 @@ type CentralStorage struct {
 	manifest                    string
 	mapval                      map[string]string
 	file                        *os.File
+	manifestJson                ManifestJson
+	currentOperationFile        string
 	mu                          sync.Mutex
+}
+type ManifestJson struct {
+	Manifest_version   int    `json:"version"`
+	Last_compact_index int    `json:"last_index"`
+	Snapshot_file      string `json:"file"`
+	Snapshot_checksum  uint32 `json:"checksum"`
+	Created_at         int64  `json:"CreatedAt"`
+	Entry_count        int    `json:"entryCount"`
 }
 
 var centralStorage = CentralStorage{
@@ -42,9 +52,11 @@ var centralStorage = CentralStorage{
 	sealedFileSet:               make(map[string]struct{}),
 	cummulative_size_compaction: 0,
 	cummulative_buff_size:       0,
+	currentOperationFile:        "",
 	snap_path:                   "snapshot.tmp",
 	manifest:                    "manifest.json",
 	buff:                        new(bytes.Buffer),
 	file:                        nil,
+	manifestJson:                ManifestJson{},
 	mapval:                      make(map[string]string),
 }
