@@ -67,7 +67,7 @@ func (c *CentralStorage) CreateWALSegment(index int) string {
 }
 
 func (c *CentralStorage) ReplayAllWAL(dirName string) string {
-	_, err := os.Stat(centralStorage.snap_path)
+	_, err := os.Stat(c.snap_path)
 	if err == nil {
 		err = c.LoadSnapDataToMemory()
 		if err != nil {

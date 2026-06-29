@@ -14,28 +14,6 @@ import (
 	"time"
 )
 
-type SnapShotFile struct {
-	file *os.File
-}
-type ManifestFile struct {
-	file *os.File
-}
-type SnapShotHeader struct {
-	MagicNumber uint32
-	Version     uint32
-	EntryCount  uint32
-}
-type SnapShotEntry struct {
-	Keylen uint32
-	Vallen uint32
-	Key    string
-	Val    string
-}
-
-type SnapShotFooter struct {
-	Crcval uint32
-}
-
 func (c *CentralStorage) AddingEntryToManifest() error {
 	data, err := json.MarshalIndent(c.manifestJson, "", " ")
 	if err != nil {
@@ -67,11 +45,11 @@ func (c *CentralStorage) CreateSnapShot() (*SnapShotFile, error) {
 	}
 	return &SnapShotFile{file}, nil
 }
-func (e *SnapShotEntry) WriteSnapShotEntry(mw io.Writer) error {
+func (e *SnapShotEntry) WriteSnapShotEntry(mw io.Writer, mapval map[string]string) error {
 
 	for key, val := range mapval {
-		e.Keylen = uint32(len(key))
-		e.Vallen = uint32(len(val))
+		e.Keylen = int32(len(key))
+		e.Vallen = int32(len(val))
 		e.Key = key
 		e.Val = val
 		if err := binary.Write(mw, binary.BigEndian, e.Keylen); err != nil {
@@ -139,7 +117,7 @@ func (c *CentralStorage) WriteToSnap() {
 	var latest_snapShot int
 	var name string
 	hasher := crc32.NewIEEE() //used for incremental hashing
-	for _, p := range centralStorage.sealedFile {
+	for _, p := range c.sealedFile {
 		filepath := dirPath + "/" + p
 		name = strings.Split(p, ".")[0]
 		snapIndex := strings.Split(strings.Split(p, ".")[0], "-")[1]
@@ -149,9 +127,10 @@ func (c *CentralStorage) WriteToSnap() {
 	headerval := SnapShotHeader{
 		MagicNumber: magicNumber,
 		Version:     uint32(versionNum),
-		EntryCount:  uint32(len(mapval)),
+		EntryCount:  uint32(len(c.mapval)),
 	}
 	entry := SnapShotEntry{}
+
 	file, err := c.CreateSnapShot()
 	if err != nil {
 		log.Fatal("Error while creating in file ", err)
@@ -161,7 +140,8 @@ func (c *CentralStorage) WriteToSnap() {
 	if err := headerval.WriteSnapShotHeader(mw); err != nil {
 		c.DeleteSnapBinary()
 	}
-	if err := entry.WriteSnapShotEntry(mw); err != nil {
+
+	if err := entry.WriteSnapShotEntry(mw, c.mapval); err != nil {
 		log.Fatal("Error while writng the entry to snap=>", err)
 	}
 	footer := SnapShotFooter{}

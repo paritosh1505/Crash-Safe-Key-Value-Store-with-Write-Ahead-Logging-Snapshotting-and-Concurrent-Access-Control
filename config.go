@@ -60,3 +60,25 @@ var centralStorage = CentralStorage{
 	manifestJson:                ManifestJson{},
 	mapval:                      make(map[string]string),
 }
+
+type SnapShotFile struct {
+	file *os.File
+}
+type ManifestFile struct {
+	file *os.File
+}
+type SnapShotHeader struct {
+	MagicNumber uint32
+	Version     uint32
+	EntryCount  uint32
+}
+type SnapShotEntry struct {
+	Keylen int32
+	Vallen int32
+	Key    string
+	Val    string
+}
+
+type SnapShotFooter struct {
+	Crcval uint32
+}
