@@ -116,14 +116,9 @@ func (c *CentralStorage) FetchManifestIndex() int {
 func (c *CentralStorage) WriteToSnap() {
 	var latest_snapShot int
 	var name string
+	var sealedFileList []string
 	hasher := crc32.NewIEEE() //used for incremental hashing
-	for _, p := range c.sealedFile {
-		filepath := dirPath + "/" + p
-		name = strings.Split(p, ".")[0]
-		snapIndex := strings.Split(strings.Split(p, ".")[0], "-")[1]
-		latest_snapShot, _ = strconv.Atoi(snapIndex)
-		os.Remove(filepath)
-	}
+
 	headerval := SnapShotHeader{
 		MagicNumber: magicNumber,
 		Version:     uint32(versionNum),
@@ -149,7 +144,15 @@ func (c *CentralStorage) WriteToSnap() {
 	if hashVal, err = footer.WriteSnapShotFooter(file.file, hasher); err != nil {
 		log.Fatal("Error in footer-->", err)
 	}
+	file.file.Sync()
 
+	for _, p := range c.sealedFile {
+		filepath := dirPath + "/" + p
+		name = strings.Split(p, ".")[0]
+		snapIndex := strings.Split(strings.Split(p, ".")[0], "-")[1]
+		latest_snapShot, _ = strconv.Atoi(snapIndex)
+		sealedFileList = append(sealedFileList, filepath)
+	}
 	c.manifestJson = ManifestJson{
 		Manifest_version:   1,
 		Last_compact_index: latest_snapShot,
@@ -159,6 +162,10 @@ func (c *CentralStorage) WriteToSnap() {
 		Entry_count:        len(mapval),
 	}
 	c.AddingEntryToManifest()
+
+	for _, file := range sealedFileList {
+		os.Remove(file)
+	}
 }
 
 func (c *CentralStorage) ScanFileUsingManifest() string {
