@@ -119,7 +119,12 @@ func (c *CentralStorage) TriggerCompaction() {
 	} else {
 		c.isCompactionRunning = true
 	}
-	go c.RotateWal()
+	err := c.RotateWal()
+	if err != nil {
+		c.isCompactionRunning = false
+		return
+	}
+	go c.RunCompaction()
 }
 func (c *CentralStorage) RotateWal() error {
 	getCurrentFile := c.file.Name()
@@ -140,13 +145,18 @@ func (c *CentralStorage) RotateWal() error {
 	}
 	c.file = file
 	c.currentOperationFile = file.Name()
-	go c.RunCompaction()
 	return nil
 }
 func (c *CentralStorage) RunCompaction() {
 
 }
-
+func (c *CentralStorage) CopyLiveMapData() map[string]string {
+	privateSnap := make(map[string]string, len(c.mapval))
+	for key, val := range c.mapval {
+		privateSnap[key] = val
+	}
+	return privateSnap
+}
 func (c *CentralStorage) WriteToSnap() {
 	var latest_snapShot int
 	var name string
