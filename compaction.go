@@ -113,10 +113,43 @@ func (c *CentralStorage) FetchManifestIndex() int {
 	return index
 }
 
+func (c *CentralStorage) TriggerCompaction() {
+	if c.isCompactionRunning {
+		return
+	} else {
+		c.isCompactionRunning = true
+	}
+	go c.RotateWal()
+}
+func (c *CentralStorage) RotateWal() error {
+	getCurrentFile := c.file.Name()
+	c.sealedEntry = append(c.sealedEntry, getCurrentFile)
+	if err := c.file.Close(); err != nil {
+		return fmt.Errorf("Error while closing the file %s", err)
+	}
+	FileCount := strings.Split(strings.Split(getCurrentFile, "-")[1], ".")[0]
+	fileIndex, err := strconv.Atoi(FileCount)
+	if err != nil {
+		return fmt.Errorf("error while converting ascii to Int %w", err)
+	}
+
+	path := fmt.Sprintf("WAL_LOG/wal-%06d.log", fileIndex+1)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("Error In RotoateWAL function")
+	}
+	c.file = file
+	c.currentOperationFile = file.Name()
+	go c.RunCompaction()
+	return nil
+}
+func (c *CentralStorage) RunCompaction() {
+
+}
+
 func (c *CentralStorage) WriteToSnap() {
 	var latest_snapShot int
 	var name string
-	var sealedFileList []string
 	hasher := crc32.NewIEEE() //used for incremental hashing
 
 	headerval := SnapShotHeader{
@@ -146,13 +179,13 @@ func (c *CentralStorage) WriteToSnap() {
 	}
 	file.file.Sync()
 
-	for _, p := range c.sealedFile {
+	/*for _, p := range c.sealedFile {
 		filepath := dirPath + "/" + p
 		name = strings.Split(p, ".")[0]
 		snapIndex := strings.Split(strings.Split(p, ".")[0], "-")[1]
 		latest_snapShot, _ = strconv.Atoi(snapIndex)
 		sealedFileList = append(sealedFileList, filepath)
-	}
+	}*/
 	c.manifestJson = ManifestJson{
 		Manifest_version:   1,
 		Last_compact_index: latest_snapShot,
@@ -163,7 +196,7 @@ func (c *CentralStorage) WriteToSnap() {
 	}
 	c.AddingEntryToManifest()
 
-	for _, file := range sealedFileList {
+	for file := range c.sealedFileSet {
 		os.Remove(file)
 	}
 }
@@ -210,7 +243,7 @@ func (c *CentralStorage) LoadSnapDataToMemory() error {
 
 		fmt.Println(string(keyByte))
 		fmt.Println(string(valByte))
-		mapval[string(keyByte)] = string(valByte)
+		c.mapval[string(keyByte)] = string(valByte)
 	}
 	return nil
 }

@@ -142,7 +142,7 @@ func (c *CentralStorage) DecodeWALRecord(filereader *os.File) (WALRecord, error)
 
 }
 
-func (c *CentralStorage) StoreSealedFile(buffsize int64, threshold int, sealedEntry []string) []string {
+func (c *CentralStorage) StoreSealedFile() []string {
 
 	dirpath, err := os.ReadDir(dirPath)
 	if err != nil {
@@ -150,15 +150,16 @@ func (c *CentralStorage) StoreSealedFile(buffsize int64, threshold int, sealedEn
 	}
 
 	for _, filename := range dirpath {
-		if _, exist := centralStorage.sealedFileSet[filename.Name()]; !exist {
-			sealedEntry = append(sealedEntry, filename.Name())
-			centralStorage.sealedFileSet[filename.Name()] = struct{}{}
+		if _, exist := c.sealedFileSet[filename.Name()]; !exist {
+			c.sealedEntry = append(c.sealedEntry, filename.Name())
+			c.sealedFileSet[filename.Name()] = struct{}{}
 		}
 
 	}
 	defer c.file.Close()
-	return sealedEntry
+	return c.sealedEntry
 }
+
 func (c *CentralStorage) WriteToWAL(currFile string, record WALRecord) error {
 	c.mu.Lock()
 	encodedrec, err, buffsize := c.EncodeWALRecord(record)
@@ -179,24 +180,22 @@ func (c *CentralStorage) WriteToWAL(currFile string, record WALRecord) error {
 
 	currFileSize := info.Size()
 	currFileSize += int64(buffsize)
-	fmt.Println("curr file", currFile, "and size ", currFileSize)
+	fmt.Println("curr file", currFile, "and size ", currFileSize, " and sealed file ", c.sealedFile)
 
-	//fmt.Println("**************", sealedFile)
 	c.cummulative_size_compaction += int(buffsize)
 	if err != nil || buffsize > threshold || currFileSize > threshold {
-		c.sealedFile = c.StoreSealedFile(buffsize, threshold, c.sealedFile)
+		c.sealedFile = c.StoreSealedFile()
 		c.currentOperationFile = c.ManageWALFile()
 	}
 
 	c.file.Write(encodedrec)
 	c.file.Sync()
-	//record, err = DecodeWALRecord()
 	if c.cummulative_size_compaction < compaction_limit {
-		WriteToMap(record)
+		c.WriteToMap(record)
 	} else {
-		//sealedFile = append(sealedFile, currFile)
-		c.WriteToSnap()
-		c.cummulative_size_compaction = 0
+		//TODO: implement background compaction
+		c.TriggerCompaction()
+		//c.cummulative_size_compaction = 0
 	}
 
 	return err

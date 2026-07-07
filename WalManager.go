@@ -67,6 +67,8 @@ func (c *CentralStorage) CreateWALSegment(index int) string {
 }
 
 func (c *CentralStorage) ReplayAllWAL(dirName string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	_, err := os.Stat(c.snap_path)
 	if err == nil {
 		err = c.LoadSnapDataToMemory()
@@ -75,7 +77,6 @@ func (c *CentralStorage) ReplayAllWAL(dirName string) string {
 		}
 	}
 	index := c.FetchManifestIndex()
-	fmt.Println("********index val", c.FetchManifestIndex())
 	var currFileName string
 	dirpath, err := os.ReadDir(dirName)
 	if err != nil {
@@ -98,7 +99,7 @@ func (c *CentralStorage) ReplayAllWAL(dirName string) string {
 					log.Printf("Error decoding WAL record in %s: %v", currFileName, err)
 					break
 				}
-				WriteToMap(record)
+				c.WriteToMap(record)
 			}
 
 		}

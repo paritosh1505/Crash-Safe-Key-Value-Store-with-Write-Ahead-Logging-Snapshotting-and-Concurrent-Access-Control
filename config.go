@@ -12,6 +12,7 @@ const compaction_limit = 250
 const magicNumber = 0x534E4150
 
 var versionNum uint32 = 1
+var snapshotMap map[string]string
 
 // var cummulative_size_compaction = 0
 
@@ -36,6 +37,8 @@ type CentralStorage struct {
 	file                        *os.File
 	manifestJson                ManifestJson
 	currentOperationFile        string
+	isCompactionRunning         bool
+	sealedEntry                 []string
 	mu                          sync.Mutex
 }
 type ManifestJson struct {
